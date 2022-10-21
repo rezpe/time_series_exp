@@ -1,0 +1,10 @@
+matplotlib
+numpy
+pandas
+torch 
+torchvision 
+torchaudio
+pytorch-lightning
+pyro-ppl 
+ConfigSpace
+smac
