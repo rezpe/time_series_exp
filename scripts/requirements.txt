@@ -1,10 +1,12 @@
 matplotlib
 numpy
 pandas
+airtable
 torch 
 torchvision 
 torchaudio
 pytorch-lightning
 pyro-ppl 
+statsmodels
 ConfigSpace
 smac

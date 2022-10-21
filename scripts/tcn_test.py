@@ -159,16 +159,17 @@ def train_model(config):
     valid_loader = DataLoader(valid, batch_size=256)
 
     from pytorch_lightning.callbacks import EarlyStopping
+    device = 3
 
     trainer = pl.Trainer(max_epochs=epochs,
-                         accelerator="mps",
-                         #devices=[3],
+                         accelerator="gpu",
+                         devices=[device],
                          #max_time="00:00:20:00",
                          callbacks=[EarlyStopping("val_loss",
                                                   verbose=True, 
                                                   patience=1,
                                                   mode="min")])
-
+    print(device)
     tcn=TCN(n_channels=n_channels,k_size=ksize,regressor_size=regressor_size,lr=lr)
     trainer.fit(model=tcn, train_dataloaders=train_loader,val_dataloaders=valid_loader)
 
