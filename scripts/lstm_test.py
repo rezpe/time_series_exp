@@ -179,12 +179,12 @@ def train_model(config):
     error = trainer.test(lstm,valid_loader)
     
     at_log(f"lstm_smac:{datetime.datetime.now().strftime('%Y_%m_%d')} seasonal: {seasonal_removal}",
-       [{"nll":error}],
+       [{"nll":lstm}],
        str(lgbmodel),
        str(stations)+""+str(fields),
       "test")
 
-    return error
+    return error['test_loss']
 
 from ConfigSpace import ConfigurationSpace
 from ConfigSpace.hyperparameters import UniformIntegerHyperparameter,UniformFloatHyperparameter
