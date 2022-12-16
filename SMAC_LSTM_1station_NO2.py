@@ -67,8 +67,6 @@ for key in y_test.keys():
     y_test[key]=torch.FloatTensor(y_test[key].values)
 
 ## Model
-import pytorch_lightning as pl
-import pyro.distributions as dist
 
 class LSTM(pl.LightningModule):
     def __init__(self,hidden_dim=32, n_layers=4, regressor_size=200, lr=0.01):
@@ -146,9 +144,15 @@ class LSTM(pl.LightningModule):
         return optimizer
 
 # SMAC
+
+exp=f"lstm_s_{len(stations)}_f_{len(fields)}_t_{datetime.now().strftime('%Y_%m_%d')}"
+
 from quantile_regression import metrics
+from pytorch_lightning.callbacks import EarlyStopping
 
 def train_model(config):
+
+    print(config)
     
     batch_size = config["batch_size"]
     hidden_dim = config["hidden_dim"]
@@ -163,28 +167,30 @@ def train_model(config):
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
     valid_loader = DataLoader(valid, batch_size=256)
 
-    from pytorch_lightning.callbacks import EarlyStopping
+    device=1
 
     trainer = pl.Trainer(max_epochs=epochs,
                          accelerator="gpu",
+                         devices=[device],
                          #max_time="00:00:20:00",
-                         callbacks=[EarlyStopping("val_loss",
-                                                  verbose=True, 
-                                                  patience=1,
-                                                  mode="min")])
+                         #callbacks=[EarlyStopping("val_loss",
+                         #                         verbose=True, 
+                         #                         patience=1,
+                         #                         mode="min")]
+                         )
 
     lstm=LSTM(hidden_dim=hidden_dim, n_layers=n_layers,lr=lr)
     trainer.fit(model=lstm, train_dataloaders=train_loader,val_dataloaders=valid_loader)
 
     error = trainer.test(lstm,valid_loader)
     
-    at_log(f"lstm_smac:{datetime.datetime.now().strftime('%Y_%m_%d')} seasonal: {seasonal_removal}",
-       [{"nll":lstm}],
-       str(lgbmodel),
+    at_log(exp,
+       [{"nll":error}],
+       str(lstm),
        str(stations)+""+str(fields),
       "test")
 
-    return error['test_loss']
+    return error[0]["test_loss"]
 
 from ConfigSpace import ConfigurationSpace
 from ConfigSpace.hyperparameters import UniformIntegerHyperparameter,UniformFloatHyperparameter
@@ -194,15 +200,15 @@ from smac.scenario.scenario import Scenario
 # Define your hyperparameters
 configspace = ConfigurationSpace()
 configspace.add_hyperparameter(UniformIntegerHyperparameter("batch_size", 30, 4000))
-configspace.add_hyperparameter(UniformIntegerHyperparameter("epochs", 2, 20))
+configspace.add_hyperparameter(UniformIntegerHyperparameter("epochs", 5, 40))
 configspace.add_hyperparameter(UniformIntegerHyperparameter("hidden_dim", 8, 150))
-configspace.add_hyperparameter(UniformFloatHyperparameter("lr", 0.0001, 0.1, default_value=0.001, log=True))
+configspace.add_hyperparameter(UniformFloatHyperparameter("lr", 0.0001, 0.05, default_value=0.001, log=True))
 configspace.add_hyperparameter(UniformIntegerHyperparameter("n_layers", 1, 2))
 
 # Provide meta data for the optimization
 scenario = Scenario({
     "run_obj": "quality",  
-    "runcount-limit": 50,  
+    "runcount-limit": 150,  
     "cs": configspace,
     "abort_on_first_run_crash":False
 })
@@ -213,12 +219,16 @@ best_found_config = smac.optimize()
 print("Best Configuration:")
 print(best_found_config)
 
-cfg_traj = [ traj.incumbent for traj in smac.trajectory]
-plt.plot([smac.runhistory.get_cost(cfg) if cfg in cfg_traj else None for cfg in smac.runhistory.get_all_configs()], 'bo')
-plt.plot([smac.runhistory.get_cost(cfg)  for cfg in  smac.runhistory.get_all_configs()])
-plt.title('SMAC scores')
-plt.legend(['Tested configuration', 'Selected incumbent'])
-plt.xlabel('Number of iterations')
-plt.ylim([0,100])
-plt.ylabel('Score')
-plt.save("results.png")
+rh = smac.get_runhistory()
+values=[]
+for (config_id, instance_id, seed, budget), (cost, time, status, starttime, endtime, additional_info) in rh.data.items():
+   values.append((cost, time, status, starttime, endtime, additional_info))
+df=pd.DataFrame(values)
+df.columns=("cost", "time", "status", "starttime", "endtime", "additional_info")
+df=df.sort_values("starttime")
+
+configs = pd.DataFrame([dict(cfg) for cfg in smac.runhistory.get_all_configs()])
+
+total = pd.concat([df,configs],axis=1)
+
+total.to_csv(f"results/lstm_s_{len(stations)}_f_{len(fields)}_t_{datetime.now().strftime('%Y_%m_%d')}.csv")

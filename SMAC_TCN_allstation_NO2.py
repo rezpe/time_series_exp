@@ -49,7 +49,7 @@ stations = ['28079017', '28079011', '28079048', '28079060', '28079036',
        '28079024', '28079058', '28079057', '28079039', '28079054',
        '28079016', '28079050', '28079035', '28079047']
 
-stations=stations[:1]
+#stations=stations[:1]
 
 fields=['SPA.NO2','AEMET.BLH', 'AEMET.SP', 'AEMET.T2M', 'AEMET.TP',
         'AEMET.WS', 'MACC.NO2', 'MACC.O3', 'MACC.PM10',
@@ -159,29 +159,31 @@ def train_model(config):
     valid_loader = DataLoader(valid, batch_size=256)
 
     from pytorch_lightning.callbacks import EarlyStopping
-    device = 3
+    # 16GB (0 and 3) + 32GB (1 and 2)
+    device = 1
 
     trainer = pl.Trainer(max_epochs=epochs,
                          accelerator="gpu",
                          devices=[device],
                          #max_time="00:00:20:00",
-                         callbacks=[EarlyStopping("val_loss",
-                                                  verbose=True, 
-                                                  patience=1,
-                                                  mode="min")])
+                         #callbacks=[EarlyStopping("val_loss",
+                         #                         verbose=True, 
+                         #                         patience=1,
+                         #                         mode="min")]
+                         )
     print(device)
     tcn=TCN(n_channels=n_channels,k_size=ksize,regressor_size=regressor_size,lr=lr)
     trainer.fit(model=tcn, train_dataloaders=train_loader,val_dataloaders=valid_loader)
 
     error = trainer.test(tcn,valid_loader)
     
-    at_log(f"tcn_smac:{datetime.datetime.now().strftime('%Y_%m_%d')} seasonal: {seasonal_removal}",
+    at_log(f"tcn_smac:{datetime.now().strftime('%Y_%m_%d')} seasonal: {seasonal_removal}",
        [{"nll":error}],
-       str(lgbmodel),
+       str(tcn),
        str(stations)+""+str(fields),
       "test")
 
-    return error
+    return error[0]["test_loss"]
 
 # Tests run
 from ConfigSpace import ConfigurationSpace
@@ -192,16 +194,16 @@ from smac.scenario.scenario import Scenario
 # Define your hyperparameters
 configspace = ConfigurationSpace()
 configspace.add_hyperparameter(UniformIntegerHyperparameter("batch_size", 30, 4000))
-configspace.add_hyperparameter(UniformIntegerHyperparameter("epochs", 2, 20))
+configspace.add_hyperparameter(UniformIntegerHyperparameter("epochs", 5, 40))
 configspace.add_hyperparameter(UniformIntegerHyperparameter("n_channels", 8, 256))
 configspace.add_hyperparameter(UniformIntegerHyperparameter("ksize", 3, 20))
 configspace.add_hyperparameter(UniformIntegerHyperparameter("regressor_size", 50, 1000))
-configspace.add_hyperparameter(UniformFloatHyperparameter("lr", 0.001, 0.1, default_value=0.01, log=True))
+configspace.add_hyperparameter(UniformFloatHyperparameter("lr", 0.001, 0.04, default_value=0.01, log=True))
 
 # Provide meta data for the optimization
 scenario = Scenario({
     "run_obj": "quality",  
-    "runcount-limit": 100,  
+    "runcount-limit": 150,  
     "cs": configspace,
     "abort_on_first_run_crash": False
 })
@@ -212,12 +214,16 @@ best_found_config = smac.optimize()
 print("Best Configuration:")
 print(best_found_config)
 
-cfg_traj = [ traj.incumbent for traj in smac.trajectory]
-plt.plot([smac.runhistory.get_cost(cfg) if cfg in cfg_traj else None for cfg in smac.runhistory.get_all_configs()], 'bo')
-plt.plot([smac.runhistory.get_cost(cfg)  for cfg in  smac.runhistory.get_all_configs()])
-plt.title('SMAC scores')
-plt.legend(['Tested configuration', 'Selected incumbent'])
-plt.xlabel('Number of iterations')
-plt.ylim([0,100])
-plt.ylabel('Score')
-plt.savefig(f"tcn_smac_{datetime.datetime.now().strftime('%Y_%m_%d')}_seasonal_{seasonal_removal}.png")
+rh = smac.get_runhistory()
+values=[]
+for (config_id, instance_id, seed, budget), (cost, time, status, starttime, endtime, additional_info) in rh.data.items():
+   values.append((cost, time, status, starttime, endtime, additional_info))
+df=pd.DataFrame(values)
+df.columns=("cost", "time", "status", "starttime", "endtime", "additional_info")
+df=df.sort_values("starttime")
+
+configs = pd.DataFrame([dict(cfg) for cfg in smac.runhistory.get_all_configs()])
+
+total = pd.concat([df,configs],axis=1)
+
+total.to_csv(f"results/tcn_s_{len(stations)}_f_{len(fields)}_t_{datetime.now().strftime('%Y_%m_%d')}.csv")
