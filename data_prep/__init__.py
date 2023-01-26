@@ -131,6 +131,6 @@ def get_data(stations,fields,seasonal_removal,seq_length,horizon):
 
     X_test = dict([res[0] for res in result])
     y_test = dict([res[1] for res in result])
-    v_recover = dict([res[1] for res in result])
+    v_recover = dict([res[2] for res in result])
         
     return X_train,y_train, X_test, y_test, v_recover
