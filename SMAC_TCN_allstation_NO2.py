@@ -57,7 +57,12 @@ fields=['SPA.NO2','AEMET.BLH', 'AEMET.SP', 'AEMET.T2M', 'AEMET.TP',
 
 fields=fields[:1]
 
-X_train,y_train, X_test, y_test, v_recover = data_prep.get_data(stations,fields,seasonal_removal,seq_length,horizon)
+stations_fields = []
+for station in stations:
+    for field in fields:
+        stations_fields.append([station, field])
+
+X_train,y_train, X_test, y_test, v_recover = data_prep.get_data(stations_fields,seasonal_removal,seq_length,horizon)
 
 X_train = torch.FloatTensor(X_train.values)
 for key in X_test.keys():
