@@ -49,7 +49,7 @@ stations = ['28079017', '28079011', '28079048', '28079060', '28079036',
        '28079024', '28079058', '28079057', '28079039', '28079054',
        '28079016', '28079050', '28079035', '28079047']
 
-stations=stations[:1]
+#stations=stations[:1]
 
 fields=['SPA.NO2','AEMET.BLH', 'AEMET.SP', 'AEMET.T2M', 'AEMET.TP',
         'AEMET.WS', 'MACC.NO2', 'MACC.O3', 'MACC.PM10',
@@ -57,10 +57,7 @@ fields=['SPA.NO2','AEMET.BLH', 'AEMET.SP', 'AEMET.T2M', 'AEMET.TP',
 
 fields=fields[:1]
 
-stations_fields = []
-for station in stations:
-    for field in fields:
-        stations_fields.append([station, field])
+stations_fields = pd.read_csv("features_cluster/keep_ts.csv").values
 
 X_train,y_train = data_prep.get_train_data(stations_fields,seasonal_removal,seq_length,horizon)
 
@@ -84,7 +81,7 @@ def train_model(config):
     predictions = lgbmodel.predict(X_train_val)
     error = metrics.evaluate(predictions.values,y_train_val.values.reshape(-1))
     
-    at_log(f"lgbm_smac:{datetime.now().strftime('%Y_%m_%d')}",
+    at_log(f"lgbm_smac_s{len(stations)}_f{len(fields)}:{datetime.now().strftime('%Y_%m_%d')}",
        error,
        str(lgbmodel),
        str(stations)+""+str(fields),

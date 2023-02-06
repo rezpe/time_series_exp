@@ -62,7 +62,7 @@ for station in stations:
     for field in fields:
         stations_fields.append([station, field])
 
-X_train,y_train, X_test, y_test, v_recover = data_prep.get_data(stations_fields,seasonal_removal,seq_length,horizon)
+X_train,y_train = data_prep.get_train_data(stations_fields,seasonal_removal,seq_length,horizon)
 
 from sklearn.model_selection import train_test_split
 import quantile_regression

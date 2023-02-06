@@ -117,9 +117,7 @@ def process_test_station(pair):
             [station,y[X.index>test_SPLIT].copy()],\
             [station,tdf[X.index>test_SPLIT][["trend_norm","seasonal"]].copy()]
 
-def get_data(cluster1,seasonal_removal,seq_length,horizon):
-    X_train=[]
-    y_train=[]
+def get_train_data(cluster1,seasonal_removal,seq_length,horizon):
     
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
     result = pool.map(process_station, [[station_field,seasonal_removal,horizon,seq_length] for station_field in cluster1])
@@ -129,7 +127,11 @@ def get_data(cluster1,seasonal_removal,seq_length,horizon):
 
     X_train=pd.concat(X_train)
     y_train=pd.concat(y_train)
-    
+
+    return X_train,y_train
+
+def get_test_data(stations,seasonal_removal,seq_length,horizon):  
+   
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
     result = pool.map(process_test_station, [[station,seasonal_removal,horizon,seq_length] for station in stations])
 
@@ -137,4 +139,4 @@ def get_data(cluster1,seasonal_removal,seq_length,horizon):
     y_test = dict([res[1] for res in result])
     v_recover = dict([res[2] for res in result])
         
-    return X_train,y_train, X_test, y_test, v_recover   
+    return X_test, y_test, v_recover

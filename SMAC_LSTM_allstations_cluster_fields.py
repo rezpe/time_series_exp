@@ -57,10 +57,7 @@ fields=['SPA.NO2','AEMET.BLH', 'AEMET.SP', 'AEMET.T2M', 'AEMET.TP',
 
 fields=fields[:1]
 
-stations_fields = []
-for station in stations:
-    for field in fields:
-        stations_fields.append([station, field])
+stations_fields = pd.read_csv("features_cluster/keep_ts.csv").values
 
 X_train,y_train = data_prep.get_train_data(stations_fields,seasonal_removal,seq_length,horizon)
 

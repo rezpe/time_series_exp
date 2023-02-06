@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-## Torch initialize
+## Torch initialize 
 import torch 
 import os
 import random
@@ -57,10 +57,7 @@ fields=['SPA.NO2','AEMET.BLH', 'AEMET.SP', 'AEMET.T2M', 'AEMET.TP',
 
 fields=fields[:1]
 
-stations_fields = []
-for station in stations:
-    for field in fields:
-        stations_fields.append([station, field])
+stations_fields = pd.read_csv("features_cluster/keep_ts.csv").values
 
 X_train,y_train = data_prep.get_train_data(stations_fields,seasonal_removal,seq_length,horizon)
 
@@ -68,51 +65,45 @@ X_train = torch.FloatTensor(X_train.values)
 y_train = torch.FloatTensor(y_train.values)
 ## Model
 
-class LSTM(pl.LightningModule):
-    def __init__(self,hidden_dim=32, n_layers=4, regressor_size=200, lr=0.01):
+class TCN(pl.LightningModule):
+    def __init__(self,n_channels=128,k_size=3,regressor_size=200,lr=0.01):
         super().__init__()
         
-        self.lr = lr
-        self.regressor_size = regressor_size
-        
-        self.input_size = 1
-        self.output_size=1
-        self.hidden_dim, self.n_layers = hidden_dim, n_layers
+        self.n_channels, self.k_size, self.regressor_size, self.lr = n_channels, k_size, regressor_size, lr
 
-        # LSTM layers
-        self.lstm = nn.LSTM(
-            self.input_size, self.hidden_dim, self.n_layers, batch_first=True
+        self.features = nn.Sequential(
+            nn.Conv1d(in_channels=1, 
+                      out_channels=self.n_channels, 
+                      kernel_size=self.k_size, 
+                      padding=(int(self.k_size/2))),
+            nn.MaxPool1d(2),
+            nn.ReLU(),
         )
 
-        # Regressor
         self.regressor_mu = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim),
-            nn.Linear(self.hidden_dim,self.regressor_size),
+            nn.LayerNorm(self.n_channels*int(seq_length/2)),
+            nn.Linear(self.n_channels*int(seq_length/2),self.regressor_size),
             nn.ReLU(),
             nn.LayerNorm(self.regressor_size),
             nn.Linear(self.regressor_size,1)
         )
         
         self.regressor_s = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim),
-            nn.Linear(self.hidden_dim,self.regressor_size),
+            nn.LayerNorm(self.n_channels*int(seq_length/2)),
+            nn.Linear(self.n_channels*int(seq_length/2),self.regressor_size),
             nn.ReLU(),
             nn.LayerNorm(self.regressor_size),
             nn.Linear(self.regressor_size,1),
             nn.Softplus(),  # enforces positivity
         )
     
-    def forward(self, x):
-        self.lstm.flatten_parameters()
-        
-        out, (h,c) = self.lstm(x)
-        out = out[:, -1, :]
-        mu = self.regressor_mu(out)
-        s = self.regressor_s(out)
+    def forward(self,x):
+        x = self.features(x)
+        x = x.view(-1,self.n_channels*x.shape[2])
+        mu = self.regressor_mu(x)
+        s = self.regressor_s(x)
         base_dist = dist.Normal(mu, s)
         return base_dist
-
-        return out
     
     def training_step(self, batch, batch_idx):
         x, y = batch  
@@ -143,31 +134,30 @@ class LSTM(pl.LightningModule):
         optimizer = optim.Adam(self.parameters(),lr=self.lr,weight_decay=self.lr/100)
         return optimizer
 
-# SMAC
-
-exp=f"lstm_s_{len(stations)}_f_{len(fields)}_t_{datetime.now().strftime('%Y_%m_%d')}"
-
+## Smac tests
 from quantile_regression import metrics
-from pytorch_lightning.callbacks import EarlyStopping
 
 def train_model(config):
-
+    
     print(config)
     
     batch_size = config["batch_size"]
-    hidden_dim = config["hidden_dim"]
+    lr = config["lr"]
     epochs = config["epochs"]
-    lr= config["lr"]
-    n_layers= config["n_layers"]
+    n_channels= config["n_channels"]
+    ksize = config["ksize"]
+    regressor_size= config["regressor_size"]
 
     # Setup data
-    X_train_gf = X_train.reshape([len(X_train), -1, 1])
+    X_train_gf = X_train.reshape(len(X_train),1,len(X_train[0]))
     train = TensorDataset(X_train_gf, y_train)
     train, valid = random_split(train,[int(len(train)*0.95), len(train)-int(len(train)*0.95)])
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True,num_workers=8)
     valid_loader = DataLoader(valid, batch_size=256)
 
-    device=1
+    from pytorch_lightning.callbacks import EarlyStopping
+    # 16GB (0 and 3) + 32GB (1 and 2)
+    device = 1
 
     trainer = pl.Trainer(max_epochs=epochs,
                          accelerator="gpu",
@@ -178,22 +168,23 @@ def train_model(config):
                          #                         patience=1,
                          #                         mode="min")]
                          )
+    print(device)
+    tcn=TCN(n_channels=n_channels,k_size=ksize,regressor_size=regressor_size,lr=lr)
+    trainer.fit(model=tcn, train_dataloaders=train_loader,val_dataloaders=valid_loader)
 
-    lstm=LSTM(hidden_dim=hidden_dim, n_layers=n_layers,lr=lr)
-    trainer.fit(model=lstm, train_dataloaders=train_loader,val_dataloaders=valid_loader)
-
-    error = trainer.test(lstm,valid_loader)
+    error = trainer.test(tcn,valid_loader)
     
-    at_log(exp,
+    at_log(f"tcn_smac:{datetime.now().strftime('%Y_%m_%d')} seasonal: {seasonal_removal}",
        [{"nll":error}],
-       str(lstm),
+       str(tcn),
        str(stations)+""+str(fields),
       "test")
 
     return error[0]["test_loss"]
 
+# Tests run
 from ConfigSpace import ConfigurationSpace
-from ConfigSpace.hyperparameters import UniformIntegerHyperparameter,UniformFloatHyperparameter
+from ConfigSpace.hyperparameters import UniformIntegerHyperparameter, UniformFloatHyperparameter
 from smac.facade.smac_bb_facade import SMAC4BB
 from smac.scenario.scenario import Scenario
 
@@ -201,16 +192,17 @@ from smac.scenario.scenario import Scenario
 configspace = ConfigurationSpace()
 configspace.add_hyperparameter(UniformIntegerHyperparameter("batch_size", 30, 4000))
 configspace.add_hyperparameter(UniformIntegerHyperparameter("epochs", 5, 40))
-configspace.add_hyperparameter(UniformIntegerHyperparameter("hidden_dim", 8, 150))
-configspace.add_hyperparameter(UniformFloatHyperparameter("lr", 0.0001, 0.05, default_value=0.001, log=True))
-configspace.add_hyperparameter(UniformIntegerHyperparameter("n_layers", 1, 2))
+configspace.add_hyperparameter(UniformIntegerHyperparameter("n_channels", 8, 256))
+configspace.add_hyperparameter(UniformIntegerHyperparameter("ksize", 3, 20))
+configspace.add_hyperparameter(UniformIntegerHyperparameter("regressor_size", 50, 1000))
+configspace.add_hyperparameter(UniformFloatHyperparameter("lr", 0.001, 0.04, default_value=0.01, log=True))
 
 # Provide meta data for the optimization
 scenario = Scenario({
     "run_obj": "quality",  
     "runcount-limit": 150,  
     "cs": configspace,
-    "abort_on_first_run_crash":False
+    "abort_on_first_run_crash": False
 })
 
 smac = SMAC4BB(scenario=scenario, tae_runner=train_model)
@@ -231,4 +223,4 @@ configs = pd.DataFrame([dict(cfg) for cfg in smac.runhistory.get_all_configs()])
 
 total = pd.concat([df,configs],axis=1)
 
-total.to_csv(f"results/lstm_s_{len(stations)}_f_{len(fields)}_t_{datetime.now().strftime('%Y_%m_%d')}.csv")
+total.to_csv(f"results/tcn_s_{len(stations)}_f_{len(fields)}_t_{datetime.now().strftime('%Y_%m_%d')}.csv")

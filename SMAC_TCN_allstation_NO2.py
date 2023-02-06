@@ -62,15 +62,10 @@ for station in stations:
     for field in fields:
         stations_fields.append([station, field])
 
-X_train,y_train, X_test, y_test, v_recover = data_prep.get_data(stations_fields,seasonal_removal,seq_length,horizon)
+X_train,y_train = data_prep.get_train_data(stations_fields,seasonal_removal,seq_length,horizon)
 
 X_train = torch.FloatTensor(X_train.values)
-for key in X_test.keys():
-    X_test[key]=torch.FloatTensor(X_test[key].values)
 y_train = torch.FloatTensor(y_train.values)
-for key in y_test.keys():
-    y_test[key]=torch.FloatTensor(y_test[key].values)
-
 ## Model
 
 class TCN(pl.LightningModule):
