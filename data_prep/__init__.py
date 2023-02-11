@@ -5,11 +5,8 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 import os
 import multiprocessing
 
-
-folder="/home/sperezv/air_qual_aemet"
-
 def process_station(pair):
-    station_field,seasonal_removal,horizon,seq_length = pair
+    folder,station_field,seasonal_removal,horizon,seq_length = pair
     station,field = station_field
 
     # Reading input file
@@ -63,7 +60,7 @@ def process_station(pair):
     
     
 def process_test_station(pair):
-    station,seasonal_removal,horizon,seq_length = pair
+    folder,station,seasonal_removal,horizon,seq_length = pair
     field = 'SPA.NO2'
     # Reading input file
     df = pd.read_csv(f"{folder}/{station}.csv",sep=";")
@@ -117,10 +114,10 @@ def process_test_station(pair):
             [station,y[X.index>test_SPLIT].copy()],\
             [station,tdf[X.index>test_SPLIT][["trend_norm","seasonal"]].copy()]
 
-def get_train_data(cluster1,seasonal_removal,seq_length,horizon):
+def get_train_data(folder,cluster1,seasonal_removal,seq_length,horizon):
     
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    result = pool.map(process_station, [[station_field,seasonal_removal,horizon,seq_length] for station_field in cluster1])
+    result = pool.map(process_station, [[folder,station_field,seasonal_removal,horizon,seq_length] for station_field in cluster1])
     
     X_train = [res[0] for res in result]
     y_train = [res[1] for res in result]
@@ -130,10 +127,10 @@ def get_train_data(cluster1,seasonal_removal,seq_length,horizon):
 
     return X_train,y_train
 
-def get_test_data(stations,seasonal_removal,seq_length,horizon):  
+def get_test_data(folder,stations,seasonal_removal,seq_length,horizon):  
    
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    result = pool.map(process_test_station, [[station,seasonal_removal,horizon,seq_length] for station in stations])
+    result = pool.map(process_test_station, [[folder,station,seasonal_removal,horizon,seq_length] for station in stations])
 
     X_test = dict([res[0] for res in result])
     y_test = dict([res[1] for res in result])
