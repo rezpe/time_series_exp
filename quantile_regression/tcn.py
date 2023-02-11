@@ -8,6 +8,10 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 import pytorch_lightning as pl
 import pyro.distributions as dist
 
+seq_length=168
+horizon=13
+seasonal_removal=True
+
 class TCN(pl.LightningModule):
     def __init__(self,n_channels=128,k_size=3,regressor_size=200,lr=0.01):
         super().__init__()

@@ -8,6 +8,10 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 import pytorch_lightning as pl
 import pyro.distributions as dist
 
+seq_length=168
+horizon=13
+seasonal_removal=True
+
 class LSTM(pl.LightningModule):
     def __init__(self,hidden_dim=32, n_layers=4, regressor_size=200, lr=0.01):
         super().__init__()
