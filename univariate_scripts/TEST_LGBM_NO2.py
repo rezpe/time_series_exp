@@ -64,7 +64,6 @@ import quantile_regression
 from quantile_regression.lgba import TotalLGBQuantile
 from quantile_regression import metrics
 
-
 config = {The best config from the execution results}
 
 n_estimators = config["n_estimators"]
@@ -72,7 +71,6 @@ max_depth = config["max_depth"]
 
 lgbmodel = TotalLGBQuantile(n_estimators=config["n_estimators"],max_depth=config["max_depth"])
 lgbmodel.fit(X_train,y_train)
-
 
 errors = {}
 
